@@ -5,53 +5,64 @@ import pandas as pd
 # 1. Configuración de la página
 st.set_page_config(page_title="Rifa 2026", layout="centered")
 
-# 2. Estilos visuales optimizados para Móvil
+# 2. Estilos visuales de alta visibilidad para móvil
 st.markdown("""
     <style>
     .stApp { background-color: #FDF5E6; }
     
-    /* Botones más grandes para dedos en móvil */
+    /* Botones de números: más grandes para facilitar el toque */
     .stButton>button { 
-        width: 100%; border-radius: 10px; height: 55px; font-weight: 800; 
+        width: 100%; border-radius: 10px; height: 60px; font-weight: 800; 
         background-color: #1E1E1E !important; color: white !important;
         border: 2px solid #4B3621 !important;
-        font-size: 14px !important;
+        font-size: 16px !important;
     }
     
-    /* Tarjetas de métricas */
+    /* Tarjetas de métricas (Resumen superior) */
     div.stMetric { 
         background-color: #FFFFFF !important; 
         padding: 15px !important; 
         border-radius: 15px !important; 
         border: 2px solid #4B3621 !important;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05) !important;
     }
     
+    /* Color de texto en métricas para que no se vea blanco */
     [data-testid="stMetricLabel"] { color: #1E1E1E !important; font-weight: 900 !important; }
     [data-testid="stMetricValue"] { color: #000000 !important; font-weight: 900 !important; }
 
-    /* Ajuste de títulos */
-    h1 { font-size: 24px !important; text-align: center; color: #4B3621 !important; }
+    /* Títulos */
+    h1 { font-size: 26px !important; text-align: center; color: #4B3621 !important; font-weight: 900 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Conexión y Carga
+# 3. Conexión y Carga de Datos
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def cargar_y_limpiar():
+def cargar_datos():
+    # Leer datos sin caché para ver cambios inmediatos
     df_raw = conn.read(spreadsheet=st.secrets["public_gsheets_url"], ttl="0s")
+    
+    # Asegurar columnas necesarias
     for col in ['numero', 'comprador', 'telefono', 'estado']:
         if col not in df_raw.columns:
             df_raw[col] = ""
+            
+    # Limpiar números (ej: 1.0 -> 01) y estados vacíos
     df_raw['numero'] = df_raw['numero'].astype(str).str.split('.').str[0].str.zfill(2)
     df_raw['estado'] = df_raw['estado'].apply(lambda x: str(x).strip() if pd.notna(x) else "Disponible")
     return df_raw
 
-df = cargar_y_limpiar()
+try:
+    df = cargar_datos()
+except Exception as e:
+    st.error(f"Error de conexión: {e}")
+    st.stop()
 
-# --- INTERFAZ ---
-st.title("🏆 CONTROL DE RIFA")
+# --- INTERFAZ PRINCIPAL ---
+st.title("🏆 TABLERO DE CONTROL")
 
-# Métricas
+# Resumen de ventas
 pagados = len(df[df['estado'].str.lower() == 'pagado'])
 moras = len(df[df['estado'].str.lower() == 'en mora'])
 
@@ -61,57 +72,69 @@ c2.metric("EN MORA", f"{moras}", f"${moras*20000:,} COP")
 
 st.divider()
 
-# 4. VENTANA EMERGENTE (MODAL)
+# 4. VENTANA EMERGENTE (MODAL) PARA EDICIÓN
 @st.dialog("📝 Gestionar Número")
-def editar_numero(num_seleccionado):
-    actual = df[df['numero'] == num_seleccionado]
+def editar_numero(num_id):
+    # Buscar datos del número seleccionado
+    fila = df[df['numero'] == num_id]
     
-    # Valores actuales
-    nombre_v = str(actual['comprador'].values[0]) if not actual.empty and pd.notna(actual['comprador'].values[0]) else ""
-    tel_v = str(actual['telefono'].values[0]) if not actual.empty and pd.notna(actual['telefono'].values[0]) else ""
-    estado_v = str(actual['estado'].values[0]).capitalize() if not actual.empty else "Disponible"
+    # Extraer valores actuales
+    v_nombre = str(fila['comprador'].values[0]) if not fila.empty and pd.notna(fila['comprador'].values[0]) else ""
+    v_tel = str(fila['telefono'].values[0]) if not fila.empty and pd.notna(fila['telefono'].values[0]) else ""
+    v_estado = str(fila['estado'].values[0]).capitalize() if not fila.empty else "Disponible"
 
-    st.write(f"Estás editando el número: **{num_seleccionado}**")
+    st.write(f"Editando el número: **{num_id}**")
     
-    nuevo_nom = st.text_input("Nombre del Comprador", value=nombre_v)
-    nuevo_tel = st.text_input("Teléfono", value=tel_v)
+    nuevo_nom = st.text_input("Nombre del Comprador", value=v_nombre)
+    nuevo_tel = st.text_input("Teléfono", value=v_tel)
     
     opciones = ["Disponible", "Pagado", "En Mora"]
-    idx = opciones.index(estado_v) if estado_v in opciones else 0
-    nuevo_est = st.selectbox("Estado del pago", opciones, index=idx)
+    # Ajustar índice si el estado actual no está en la lista
+    idx = opciones.index(v_estado) if v_estado in opciones else 0
+    nuevo_est = st.selectbox("Estado del Pago", opciones, index=idx)
     
     st.write("---")
     if st.button("💾 GUARDAR CAMBIOS", use_container_width=True):
-        # Procesar datos
-        df_nuevo = df[df['numero'] != num_seleccionado].copy()
-        fila_nueva = pd.DataFrame([{
-            'numero': num_seleccionado, 
+        # 1. Crear copia y actualizar la fila
+        df_temp = df[df['numero'] != num_id].copy()
+        nueva_fila = pd.DataFrame([{
+            'numero': num_id, 
             'comprador': nuevo_nom, 
             'telefono': nuevo_tel, 
             'estado': nuevo_est
         }])
-        df_final = pd.concat([df_nuevo, fila_nueva]).sort_values('numero')
+        df_final = pd.concat([df_temp, nueva_fila]).sort_values('numero')
         
-        # Subir a la nube
-        conn.update(spreadsheet=st.secrets["public_gsheets_url"], data=df_final)
-        st.success("¡Guardado!")
-        st.rerun()
+        # 2. Intentar subir a Google Sheets (Asegúrate de que sea EDITOR)
+        try:
+            conn.update(
+                spreadsheet=st.secrets["public_gsheets_url"], 
+                data=df_final
+            )
+            st.success("¡Datos actualizados!")
+            st.rerun() # Recarga la app para mostrar los círculos nuevos
+        except Exception as err:
+            st.error(f"No se pudo guardar: {err}")
+            st.info("Revisa que el archivo de Google Sheets esté compartido como 'EDITOR'.")
 
-# 5. GRILLA DE NÚMEROS
-# Usamos columnas pequeñas para que quepan bien en móvil
-for r in range(20): # 20 filas de 5 columnas para que se vea mejor en vertical
+# 5. GRILLA DE NÚMEROS (5 columnas para móvil)
+st.write("### 📲 Toca un número")
+for r in range(20): # 20 filas x 5 columnas = 100 números
     cols = st.columns(5)
     for c in range(5):
-        val = r * 5 + c
-        if val < 100:
-            n_str = f"{val:02d}"
+        index = r * 5 + c
+        if index < 100:
+            n_str = f"{index:02d}"
             
-            fila = df[df['numero'] == n_str]
-            est = fila['estado'].values[0].lower() if not fila.empty else "disponible"
+            # Obtener estado para el icono
+            info = df[df['numero'] == n_str]
+            estado_actual = info['estado'].values[0].lower() if not info.empty else "disponible"
             
+            # Etiqueta con icono según estado
             label = n_str
-            if "pagado" in est: label = f"🔵 {n_str}"
-            elif "mora" in est: label = f"🔴 {n_str}"
+            if "pagado" in estado_actual: label = f"🔵 {n_str}"
+            elif "mora" in estado_actual: label = f"🔴 {n_str}"
             
-            if cols[c].button(label, key=f"btn_{n_str}"):
+            # Al hacer clic, abre el diálogo
+            if cols[c].button(label, key=f"n_{n_str}"):
                 editar_numero(n_str)
