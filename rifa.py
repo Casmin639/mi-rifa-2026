@@ -2,97 +2,86 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# CONFIGURACIÓN INICIAL
-st.set_page_config(page_title="Rifa 2026", layout="centered")
+# Configuración de la página
+st.set_page_config(page_title="Gestión de Rifa 2026", page_icon="🎟️")
 
-# Reemplaza esta URL con la de tu archivo de Google Sheets
-URL_DE_MI_HOJA = "TU_URL_DE_GOOGLE_SHEETS_AQUI"
+st.title("🎟️ Sistema de Gestión de Rifa")
 
-# Estilos visuales
-st.markdown("""
-    <style>
-    .stApp { background-color: #FDF5E6; }
-    .stButton>button { 
-        width: 100%; border-radius: 10px; height: 60px; font-weight: 800; 
-        background-color: #1E1E1E !important; color: white !important;
-        border: 2px solid #4B3621 !important;
-    }
-    div.stMetric { 
-        background-color: #FFFFFF !important; padding: 15px !important; 
-        border-radius: 15px !important; border: 2px solid #4B3621 !important;
-    }
-    [data-testid="stMetricLabel"] { color: #1E1E1E !important; font-weight: 900 !important; }
-    [data-testid="stMetricValue"] { color: #000000 !important; font-weight: 900 !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# Conexión profesional usando la configuración de Secrets
+# 1. Establecer conexión con Google Sheets
+# Nota: Usa los secretos definidos en el Dashboard de Streamlit
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
-    # Se añade la URL directamente aquí para evitar el ValueError
-    df_raw = conn.read(spreadsheet=URL_DE_MI_HOJA, ttl="0s")
-    df_raw.columns = df_raw.columns.str.lower()
-    for col in ['numero', 'comprador', 'telefono', 'estado']:
-        if col not in df_raw.columns: df_raw[col] = ""
-    df_raw['numero'] = df_raw['numero'].astype(str).str.split('.').str[0].str.zfill(2)
-    df_raw['estado'] = df_raw['estado'].fillna("Disponible").str.strip()
-    return df_raw
+    try:
+        # Lee la hoja de cálculo (usa ttl=0 para evitar caché y ver cambios inmediatos)
+        return conn.read(ttl="0")
+    except Exception as e:
+        st.error(f"Error al cargar los datos: {e}")
+        return None
 
-try:
-    df = cargar_datos()
-except Exception as e:
-    st.error(f"Error al cargar datos: {e}")
-    st.stop()
+df = cargar_datos()
 
-st.title("🏆 TABLERO DE CONTROL")
-
-# Métricas
-pagados = len(df[df['estado'].str.lower() == 'pagado'])
-moras = len(df[df['estado'].str.lower() == 'en mora'])
-c1, c2 = st.columns(2)
-c1.metric("PAGADOS", f"{pagados}", f"${pagados*20000:,} COP")
-c2.metric("EN MORA", f"{moras}", f"${moras*20000:,} COP")
-
-st.divider()
-
-@st.dialog("📝 Gestionar Número")
-def editar_numero(num_id):
-    fila = df[df['numero'] == num_id]
-    v_nombre = str(fila['comprador'].values[0]) if not fila.empty else ""
-    v_tel = str(fila['telefono'].values[0]) if not fila.empty else ""
-    v_estado = str(fila['estado'].values[0]).capitalize() if not fila.empty else "Disponible"
-
-    nuevo_nom = st.text_input("Nombre", value=v_nombre)
-    nuevo_tel = st.text_input("Teléfono", value=v_tel)
-    opciones = ["Disponible", "Pagado", "En Mora"]
-    nuevo_est = st.selectbox("Estado", opciones, index=opciones.index(v_estado) if v_estado in opciones else 0)
+if df is not None:
+    # --- TABLERO DE CONTROL ---
+    st.subheader("🏆 TABLERO DE CONTROL")
     
-    if st.button("💾 GUARDAR CAMBIOS", use_container_width=True):
-        df_temp = df[df['numero'] != num_id].copy()
-        nueva_fila = pd.DataFrame([{'numero': num_id, 'comprador': nuevo_nom, 'telefono': nuevo_tel, 'estado': nuevo_est}])
-        df_final = pd.concat([df_temp, nueva_fila]).sort_values('numero')
-        
-        try:
-            # Se especifica la hoja para la actualización exitosa
-            conn.update(spreadsheet=URL_DE_MI_HOJA, data=df_final)
-            st.success("¡Registro actualizado exitosamente!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"No se pudo guardar: {e}")
+    # Cálculos rápidos
+    total_pagados = len(df[df['estado'].str.contains('Pagado', case=False, na=False)])
+    # Asumiendo que el valor de cada número es $20,000 COP (ajustar según sea necesario)
+    recaudado = total_pagados * 20000 
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("PAGADOS", total_pagados, f"${recaudado:,} COP")
+    with col2:
+        en_mora = len(df) - total_pagados
+        st.metric("PENDIENTES / DISPONIBLES", en_mora)
 
-# Grilla de números
-for r in range(20):
-    cols = st.columns(5)
-    for c in range(5):
-        index = r * 5 + c
-        if index < 100:
-            n_str = f"{index:02d}"
-            est_serie = df[df['numero'] == n_str]['estado']
-            est = est_serie.values[0].lower() if not est_serie.empty else "disponible"
-            label = n_str
-            if "pagado" in est: label = f"🔵 {n_str}"
-            elif "mora" in est: label = f"🔴 {n_str}"
-            
-            if cols[c].button(label, key=f"n_{n_str}"):
-                editar_numero(n_str)
+    st.divider()
+
+    # --- GESTIÓN DE NÚMEROS ---
+    st.subheader("📝 Gestionar Números")
+    
+    # Selector de número basado en el índice o columna 'Número'
+    # Si tu Excel no tiene columna 'Número', usamos el índice del DataFrame
+    numero_seleccionado = st.selectbox("Selecciona un número para editar:", df.index)
+
+    # Formulario para editar el registro seleccionado
+    with st.form("form_edicion"):
+        st.write(f"### Editando Número: {numero_seleccionado}")
+        
+        # Precargar datos actuales
+        nombre_actual = df.loc[numero_seleccionado, 'nombre'] if 'nombre' in df.columns else ""
+        telefono_actual = df.loc[numero_seleccionado, 'telefono'] if 'telefono' in df.columns else ""
+        estado_actual = df.loc[numero_seleccionado, 'estado'] if 'estado' in df.columns else "Disponible"
+
+        nuevo_nombre = st.text_input("Nombre del Comprador", value=nombre_actual)
+        nuevo_telefono = st.text_input("Teléfono de contacto", value=telefono_actual)
+        nuevo_estado = st.selectbox("Estado del pago", 
+                                  options=["Disponible", "Pagado", "Apartado"], 
+                                  index=["Disponible", "Pagado", "Apartado"].index(estado_actual) if estado_actual in ["Disponible", "Pagado", "Apartado"] else 0)
+
+        boton_guardar = st.form_submit_button("💾 GUARDAR CAMBIOS")
+
+        if boton_guardar:
+            try:
+                # Actualizar el DataFrame localmente
+                df.loc[numero_seleccionado, 'nombre'] = nuevo_nombre
+                df.loc[numero_seleccionado, 'telefono'] = nuevo_telefono
+                df.loc[numero_seleccionado, 'estado'] = nuevo_estado
+                
+                # Subir los cambios a Google Sheets
+                conn.update(data=df)
+                st.success(f"✅ ¡Registro {numero_seleccionado} actualizado con éxito!")
+                st.balloons()
+                
+            except Exception as e:
+                st.error("No se pudo guardar: Verifica que el archivo de Google Sheets esté compartido como 'EDITOR' con el correo de la cuenta de servicio.")
+                st.info("Error técnico: " + str(e))
+
+    # --- VISTA GENERAL ---
+    with st.expander("Ver lista completa de números"):
+        st.dataframe(df, use_container_width=True)
+
+else:
+    st.warning("Configura los 'Secrets' en Streamlit Cloud para conectar con tu Google Sheet.")
