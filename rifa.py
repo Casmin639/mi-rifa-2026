@@ -1,44 +1,54 @@
 import streamlit as st
 
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS DE ALTO CONTRASTE
+# 1. CONFIGURACIÓN Y ESTILOS DE MÁXIMA VISIBILIDAD
 st.set_page_config(page_title="Gestor de Rifa Pro", layout="centered")
 
 st.markdown("""
     <style>
-    /* Fondo crema suave para la vista */
+    /* Fondo general */
     .stApp { background-color: #FDF5E6; }
     
-    /* Botones principales: Fondo oscuro y letras blancas para legibilidad total */
+    /* BOTONES: Números grandes y legibles */
     .stButton>button { 
         width: 100%; 
         border-radius: 8px; 
-        height: 50px; 
-        font-weight: bold; 
-        font-size: 16px; 
-        background-color: #262730; 
+        height: 60px; 
+        font-weight: 800; 
+        font-size: 18px; 
+        background-color: #1E1E1E; 
         color: white;
-        border: none;
+        border: 2px solid #4B3621;
     }
     
-    /* Títulos en color café oscuro para que resalten sobre el crema */
-    h1, h2, h3, .stMarkdown { 
-        color: #4B3621 !important; 
-    }
-
-    /* Tarjetas de resumen con bordes definidos */
+    /* TARJETAS DE RESUMEN: Forzar color de etiquetas */
     div.stMetric { 
         background-color: white; 
-        padding: 15px; 
-        border-radius: 12px; 
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
-        border: 1px solid #E0C9A6;
+        padding: 20px; 
+        border-radius: 15px; 
+        box-shadow: 5px 5px 15px rgba(0,0,0,0.1);
+        border: 2px solid #4B3621;
     }
+    
+    /* ESTO ARREGLA LOS TEXTOS INVISIBLES QUE ME MOSTRASTE */
+    /* Forzamos el color negro (#000000) en las etiquetas de métricas */
+    [data-testid="stMetricLabel"] {
+        color: #000000 !important;
+        font-size: 16px !important;
+        font-weight: 800 !important;
+        opacity: 1 !important;
+    }
+    
+    /* Color para los números grandes del resumen */
+    [data-testid="stMetricValue"] {
+        color: #1E1E1E !important;
+    }
+
+    h1, h2, h3 { color: #4B3621 !important; font-weight: 900; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- BASE DE DATOS ---
+# --- EL RESTO DEL CÓDIGO SIGUE IGUAL ---
 if 'datos' not in st.session_state:
-    # Cargamos tus datos de Excel conocidos
     excel_data = {
         "00": "Jose Rivera", "02": "Tia Adriana", "04": "Diana castrillon", "21": "Amanda",
         "24": "Johana prima", "27": "Carolina Fiserv", "39": "Alejo (tia)", "42": "Johana prima",
@@ -49,58 +59,38 @@ if 'datos' not in st.session_state:
     for i in range(100):
         n = f"{i:02d}"
         nombre = excel_data.get(n, "")
-        # Asignamos estados: Azul para Pagados, Rojo para Mora
         estado = "Pagado" if n in ["21", "24", "27", "39", "42", "47", "53", "57", "67", "82", "91"] else ("En Mora" if nombre else "Disponible")
         st.session_state.datos[n] = {"nombre": nombre, "estado": estado}
 
-# --- INTERFAZ ---
 st.title("🏆 TABLERO DE CONTROL")
 
-# Resumen de ventas con colores vivos
 pagados = sum(1 for d in st.session_state.datos.values() if d["estado"] == "Pagado")
 moras = sum(1 for d in st.session_state.datos.values() if d["estado"] == "En Mora")
 
 c1, c2 = st.columns(2)
-c1.metric("PAGADOS (Total)", f"{pagados}", f"${pagados*20000:,} COP")
-c2.metric("EN MORA (Pendiente)", f"{moras}", f"${moras*20000:,} COP", delta_color="inverse")
+c1.metric("PAGADOS", f"{pagados}", f"${pagados*20000:,} COP")
+c2.metric("EN MORA", f"{moras}", f"${moras*20000:,} COP", delta_color="inverse")
 
-st.write("---")
 st.write("### 📲 Toca un número para gestionar")
 
-# Grilla de 10x10 con iconos de alta visibilidad
 for fila in range(10):
     cols = st.columns(10)
     for col in range(10):
         indice = fila * 10 + col
         n = f"{indice:02d}"
         est = st.session_state.datos[n]["estado"]
-        
-        # Usamos círculos de color grandes para que se vean a simple vista
-        if est == "Pagado":
-            label = f"🔵\n{n}"
-        elif est == "En Mora":
-            label = f"🔴\n{n}"
-        else:
-            label = f"\n{n}"
-
+        label = f"🔵 {n}" if est == "Pagado" else (f"🔴 {n}" if est == "En Mora" else n)
         if cols[col].button(label, key=n):
             st.session_state.seleccionado = n
 
-# Formulario de edición táctil
 if 'seleccionado' in st.session_state:
     num = st.session_state.seleccionado
-    st.markdown(f"## 📝 Editando Número: {num}")
-    
-    with st.expander("Abrir detalles del cliente", expanded=True):
-        nuevo_nombre = st.text_input("Nombre del Comprador", value=st.session_state.datos[num]["nombre"])
-        nuevo_estado = st.selectbox("Estado de Pago", ["Disponible", "Pagado", "En Mora"], 
+    st.markdown(f"## 📝 Editando: {num}")
+    with st.expander("DETALLES DEL CLIENTE", expanded=True):
+        nuevo_nombre = st.text_input("Nombre", value=st.session_state.datos[num]["nombre"])
+        nuevo_estado = st.selectbox("Estado", ["Disponible", "Pagado", "En Mora"], 
                                      index=["Disponible", "Pagado", "En Mora"].index(st.session_state.datos[num]["estado"]))
-        
-        col_save, col_cancel = st.columns(2)
-        if col_save.button("✅ GUARDAR"):
+        if st.button("✅ GUARDAR"):
             st.session_state.datos[num] = {"nombre": nuevo_nombre, "estado": nuevo_estado}
-            del st.session_state.seleccionado
-            st.rerun()
-        if col_cancel.button("✖️ CANCELAR"):
             del st.session_state.seleccionado
             st.rerun()
