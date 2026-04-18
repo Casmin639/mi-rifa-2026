@@ -1,109 +1,79 @@
-import tkinter as tk
-from tkinter import ttk
-import json
-import os
+import streamlit as st
+import pandas as pd
 
-ARCHIVO = 'datos_rifa.json'
-VALOR_NUMERO = 20000
+# Configuración visual
+st.set_page_config(page_title="Gestor de Rifa Pro", layout="centered")
 
-# Colores solicitados
-COLOR_FONDO = "#FDF5E6"      # Crema
-COLOR_PAGADO = "#87CEEB"     # Azul Claro
-COLOR_MORA = "#FF6B6B"       # Rojo
-COLOR_DISPONIBLE = "#FFFFFF" # Blanco
-COLOR_TEXTO = "#4A4A4A"
-COLOR_CAFE = "#8B7355"
+st.markdown("""
+    <style>
+    .stApp { background-color: #FDF5E6; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 45px; font-weight: bold; font-size: 14px; }
+    div.stMetric { background-color: white; padding: 10px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_allow_html=True)
 
-def cargar_datos():
-    if os.path.exists(ARCHIVO):
-        try:
-            with open(ARCHIVO, 'r') as f:
-                return json.load(f)
-        except:
-            pass
-    return {f"{i:02d}": {"nombre": "", "tel": "", "estado": "Disponible"} for i in range(100)}
+# --- BASE DE DATOS TEMPORAL ---
+# Nota: En la web, si se reinicia la página se pierden los datos.
+# Para ventas reales, luego conectaremos Google Sheets.
+if 'datos' not in st.session_state:
+    # Datos iniciales basados en tu lista de Excel
+    excel_data = {
+        "00": "Jose Rivera", "02": "Tia Adriana", "04": "Diana castrillon", "21": "Amanda",
+        "24": "Johana prima", "27": "Carolina Fiserv", "39": "Alejo (tia)", "42": "Johana prima",
+        "47": "Alejo (tia)", "53": "Prima Luisa", "57": "Tia menchis", "67": "Claudia Prima",
+        "82": "Prima Luisa", "91": "Saris (Fiserv)"
+    }
+    st.session_state.datos = {}
+    for i in range(100):
+        n = f"{i:02d}"
+        nombre = excel_data.get(n, "")
+        estado = "Pagado" if n in ["21", "24", "27", "39", "42", "47", "53", "57", "67", "82", "91"] else ("En Mora" if nombre else "Disponible")
+        st.session_state.datos[n] = {"nombre": nombre, "estado": estado}
 
-datos = cargar_datos()
+# --- INTERFAZ ---
+st.title("🏆 TABLERO DE CONTROL")
 
-def guardar_datos():
-    with open(ARCHIVO, 'w') as f:
-        json.dump(datos, f, indent=4)
-    actualizar_resumen()
+# Resumen
+pagados = sum(1 for d in st.session_state.datos.values() if d["estado"] == "Pagado")
+moras = sum(1 for d in st.session_state.datos.values() if d["estado"] == "En Mora")
 
-def actualizar_resumen():
-    pagados = sum(1 for d in datos.values() if d.get("estado") == "Pagado")
-    en_mora = sum(1 for d in datos.values() if d.get("estado") == "En Mora")
-    lbl_resumen.config(text=f"Pagados: {pagados} (${pagados*VALOR_NUMERO:,}) | En Mora: {en_mora} (${en_mora*VALOR_NUMERO:,})")
+c1, c2 = st.columns(2)
+c1.metric("Pagados", f"{pagados}", f"${pagados*20000:,} COP")
+c2.metric("En Mora", f"{moras}", f"${moras*20000:,} COP", delta_color="inverse")
 
-def abrir_formulario(num, boton):
-    ventana = tk.Toplevel(root)
-    ventana.title(f"Número {num}")
-    ventana.geometry("350x350")
-    ventana.configure(bg=COLOR_FONDO)
-    ventana.grab_set() # Hace que no puedas tocar la ventana de atrás hasta cerrar esta
-
-    # Contenedor principal interno
-    main_frame = tk.Frame(ventana, bg=COLOR_FONDO)
-    main_frame.pack(expand=True, fill="both", padx=20, pady=20)
-
-    tk.Label(main_frame, text=f"DETALLES NÚMERO {num}", font=("Arial", 12, "bold"), bg=COLOR_FONDO, fg=COLOR_CAFE).pack(pady=10)
-    
-    tk.Label(main_frame, text="Nombre del Cliente:", bg=COLOR_FONDO, fg=COLOR_TEXTO).pack(anchor="w")
-    entry_n = tk.Entry(main_frame, font=("Arial", 11))
-    entry_n.insert(0, datos[num].get("nombre", ""))
-    entry_n.pack(pady=5, fill="x")
-
-    tk.Label(main_frame, text="Teléfono:", bg=COLOR_FONDO, fg=COLOR_TEXTO).pack(anchor="w")
-    entry_t = tk.Entry(main_frame, font=("Arial", 11))
-    entry_t.insert(0, datos[num].get("tel", ""))
-    entry_t.pack(pady=5, fill="x")
-
-    tk.Label(main_frame, text="Estado:", bg=COLOR_FONDO, fg=COLOR_TEXTO).pack(anchor="w")
-    estado_var = tk.StringVar(value=datos[num].get("estado", "Disponible"))
-    combo = ttk.Combobox(main_frame, textvariable=estado_var, values=["Disponible", "Pagado", "En Mora"], state="readonly")
-    combo.pack(pady=5, fill="x")
-
-    def confirmar():
-        datos[num] = {"nombre": entry_n.get(), "tel": entry_t.get(), "estado": estado_var.get()}
-        guardar_datos()
+# Grilla de 10x10
+st.write("### Selecciona un número")
+for fila in range(10):
+    cols = st.columns(10)
+    for col in range(10):
+        indice = fila * 10 + col
+        n = f"{indice:02d}"
+        est = st.session_state.datos[n]["estado"]
         
-        if estado_var.get() == "Pagado":
-            boton.config(bg=COLOR_PAGADO, fg="white")
-        elif estado_var.get() == "En Mora":
-            boton.config(bg=COLOR_MORA, fg="white")
+        # Colores solicitados
+        color_btn = "secondary" # Blanco por defecto
+        if est == "Pagado":
+            label = f"🔵 {n}" # Representación visual del azul claro
+        elif est == "En Mora":
+            label = f"🔴 {n}" # Representación visual del rojo
         else:
-            boton.config(bg=COLOR_DISPONIBLE, fg=COLOR_TEXTO)
-            
-        ventana.destroy()
+            label = n
 
-    tk.Button(main_frame, text="GUARDAR", command=confirmar, bg=COLOR_CAFE, fg="white", 
-              font=("Arial", 10, "bold"), relief="flat", height=2).pack(pady=20, fill="x")
+        if cols[col].button(label, key=n):
+            st.session_state.seleccionado = n
 
-# Ventana Principal
-root = tk.Tk()
-root.title("Gestor de Rifa Pro")
-root.geometry("750x850")
-root.configure(bg=COLOR_FONDO)
-
-header = tk.Frame(root, bg=COLOR_FONDO)
-header.pack(pady=20)
-tk.Label(header, text="TABLERO DE CONTROL", font=("Arial", 24, "bold"), bg=COLOR_FONDO, fg=COLOR_CAFE).pack()
-lbl_resumen = tk.Label(header, text="", font=("Arial", 11), bg=COLOR_FONDO, fg="#555")
-lbl_resumen.pack()
-
-grid_frame = tk.Frame(root, bg=COLOR_FONDO)
-grid_frame.pack(pady=10)
-
-for i in range(100):
-    n = f"{i:02d}"
-    est = datos[n].get("estado", "Disponible")
-    bg_c = COLOR_PAGADO if est == "Pagado" else COLOR_MORA if est == "En Mora" else COLOR_DISPONIBLE
-    fg_c = "white" if est in ["Pagado", "En Mora"] else COLOR_TEXTO
+# Formulario de edición (al hacer clic)
+if 'seleccionado' in st.session_state:
+    num = st.session_state.seleccionado
+    st.divider()
+    st.subheader(f"📝 Editar Número {num}")
     
-    btn = tk.Button(grid_frame, text=n, width=5, height=2, font=("Arial", 9, "bold"),
-                   bg=bg_c, fg=fg_c, relief="flat")
-    btn.config(command=lambda num=n, b=btn: abrir_formulario(num, b))
-    btn.grid(row=i//10, column=i%10, padx=2, pady=2)
-
-actualizar_resumen()
-root.mainloop()
+    with st.container():
+        nuevo_nombre = st.text_input("Nombre del Comprador", value=st.session_state.datos[num]["nombre"])
+        nuevo_estado = st.selectbox("Estado de Pago", ["Disponible", "Pagado", "En Mora"], 
+                                     index=["Disponible", "Pagado", "En Mora"].index(st.session_state.datos[num]["estado"]))
+        
+        if st.button("✅ Guardar Cambios"):
+            st.session_state.datos[num] = {"nombre": nuevo_nombre, "estado": nuevo_estado}
+            del st.session_state.seleccionado
+            st.rerun()
