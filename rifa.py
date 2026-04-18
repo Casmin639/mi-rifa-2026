@@ -7,9 +7,46 @@ st.set_page_config(page_title="Gestor de Rifa Pro", layout="centered")
 
 st.markdown("""
     <style>
+    /* Fondo general */
     .stApp { background-color: #FDF5E6; }
-    [data-testid="stMetricLabel"] { color: #000000 !important; font-weight: 800 !important; }
-    .stButton>button { width: 100%; font-weight: 800; background-color: #1E1E1E; color: white; }
+    
+    /* BOTONES: Números grandes y legibles */
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 8px; 
+        height: 60px; 
+        font-weight: 800; 
+        font-size: 18px; 
+        background-color: #1E1E1E !important; 
+        color: white !important;
+        border: 2px solid #4B3621 !important;
+    }
+    
+    /* TARJETAS DE RESUMEN */
+    div.stMetric { 
+        background-color: white; 
+        padding: 20px; 
+        border-radius: 15px; 
+        box-shadow: 5px 5px 15px rgba(0,0,0,0.1);
+        border: 2px solid #4B3621;
+    }
+    
+    /* TEXTOS DE LAS MÉTRICAS (Letras pequeñas y números grandes) */
+    [data-testid="stMetricLabel"] {
+        color: #000000 !important;
+        font-size: 16px !important;
+        font-weight: 800 !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #1E1E1E !important;
+    }
+
+    /* TÍTULOS PARA QUE NO SE VEAN BLANCOS */
+    h1, h2, h3, .stMarkdown p { 
+        color: #4B3621 !important; 
+        font-weight: 900 !important; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
