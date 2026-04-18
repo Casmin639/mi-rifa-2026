@@ -2,7 +2,11 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
+# CONFIGURACIÓN INICIAL
 st.set_page_config(page_title="Rifa 2026", layout="centered")
+
+# Reemplaza esta URL con la de tu archivo de Google Sheets
+URL_DE_MI_HOJA = "TU_URL_DE_GOOGLE_SHEETS_AQUI"
 
 # Estilos visuales
 st.markdown("""
@@ -22,12 +26,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Conexión profesional usando Service Account
+# Conexión profesional usando la configuración de Secrets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
-    # Lee directamente usando la configuración de los Secrets
-    df_raw = conn.read(ttl="0s")
+    # Se añade la URL directamente aquí para evitar el ValueError
+    df_raw = conn.read(spreadsheet=URL_DE_MI_HOJA, ttl="0s")
     df_raw.columns = df_raw.columns.str.lower()
     for col in ['numero', 'comprador', 'telefono', 'estado']:
         if col not in df_raw.columns: df_raw[col] = ""
@@ -35,7 +39,11 @@ def cargar_datos():
     df_raw['estado'] = df_raw['estado'].fillna("Disponible").str.strip()
     return df_raw
 
-df = cargar_datos()
+try:
+    df = cargar_datos()
+except Exception as e:
+    st.error(f"Error al cargar datos: {e}")
+    st.stop()
 
 st.title("🏆 TABLERO DE CONTROL")
 
@@ -66,13 +74,14 @@ def editar_numero(num_id):
         df_final = pd.concat([df_temp, nueva_fila]).sort_values('numero')
         
         try:
-            conn.update(data=df_final)
-            st.success("¡Actualizado!")
+            # Se especifica la hoja para la actualización exitosa
+            conn.update(spreadsheet=URL_DE_MI_HOJA, data=df_final)
+            st.success("¡Registro actualizado exitosamente!")
             st.rerun()
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"No se pudo guardar: {e}")
 
-# Grilla
+# Grilla de números
 for r in range(20):
     cols = st.columns(5)
     for c in range(5):
@@ -84,5 +93,6 @@ for r in range(20):
             label = n_str
             if "pagado" in est: label = f"🔵 {n_str}"
             elif "mora" in est: label = f"🔴 {n_str}"
+            
             if cols[c].button(label, key=f"n_{n_str}"):
                 editar_numero(n_str)
