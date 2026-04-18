@@ -2,99 +2,140 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# Configuración visual
+# 1. Configuración de la página
 st.set_page_config(page_title="Gestor de Rifa Pro", layout="centered")
 
+# 2. Diseño Visual de Alto Contraste
 st.markdown("""
     <style>
-    /* Fondo general */
     .stApp { background-color: #FDF5E6; }
     
-    /* BOTONES: Números grandes y legibles */
+    /* Botones de números */
     .stButton>button { 
         width: 100%; 
         border-radius: 8px; 
         height: 60px; 
         font-weight: 800; 
-        font-size: 18px; 
+        font-size: 16px; 
         background-color: #1E1E1E !important; 
         color: white !important;
         border: 2px solid #4B3621 !important;
+        margin-bottom: 5px;
     }
     
-    /* TARJETAS DE RESUMEN */
+    /* Tarjetas de resumen */
     div.stMetric { 
         background-color: white; 
-        padding: 20px; 
-        border-radius: 15px; 
+        padding: 15px; 
+        border-radius: 12px; 
         box-shadow: 5px 5px 15px rgba(0,0,0,0.1);
         border: 2px solid #4B3621;
     }
     
-    /* TEXTOS DE LAS MÉTRICAS (Letras pequeñas y números grandes) */
+    /* Textos de métricas forzados a Negro */
     [data-testid="stMetricLabel"] {
         color: #000000 !important;
-        font-size: 16px !important;
+        font-size: 15px !important;
         font-weight: 800 !important;
-        opacity: 1 !important;
     }
     [data-testid="stMetricValue"] {
         color: #1E1E1E !important;
     }
 
-    /* TÍTULOS PARA QUE NO SE VEAN BLANCOS */
-    h1, h2, h3, .stMarkdown p { 
+    /* Títulos y textos */
+    h1, h2, h3, p { 
         color: #4B3621 !important; 
-        font-weight: 900 !important; 
+        font-weight: 800 !important; 
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Conexión a la base de datos de Google Sheets
+# 3. Conexión a Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
+    # ttl=0 para que siempre traiga lo último que se guardó
     return conn.read(spreadsheet=st.secrets["public_gsheets_url"], ttl="0s")
 
-df = cargar_datos()
+try:
+    df = cargar_datos()
+    # Limpieza de datos por seguridad
+    df['numero'] = df['numero'].astype(str).str.zfill(2)
+    df['estado'] = df['estado'].fillna("Disponible")
+except Exception as e:
+    st.error("Error al conectar con Google Sheets. Revisa la URL en Secrets.")
+    st.stop()
 
-st.title("🏆 TABLERO COMPARTIDO")
+st.title("🏆 CONTROL DE RIFA")
 
-# Resumen de ventas
-pagados = len(df[df['estado'] == 'Pagado'])
-moras = len(df[df['estado'] == 'En Mora'])
+# 4. Resumen de Ventas
+# Convertimos a minúsculas para contar sin errores de dedo (Pagado vs pagado)
+pagados = len(df[df['estado'].str.lower() == 'pagado'])
+moras = len(df[df['estado'].str.lower() == 'en mora'])
 
 c1, c2 = st.columns(2)
-c1.metric("PAGADOS", f"{pagados}", f"${pagados*20000:,} COP")
-c2.metric("EN MORA", f"{moras}", f"${moras*20000:,} COP")
+c1.metric("TOTAL PAGADOS", f"{pagados}", f"${pagados*20000:,} COP")
+c2.metric("POR COBRAR (Mora)", f"{moras}", f"${moras*20000:,} COP")
 
-# Cuadrícula de números
-st.write("### 📲 Selecciona un número para editar")
-cols = st.columns(10)
-for i in range(100):
-    n = f"{i:02d}"
-    # Buscar el estado en el DataFrame
-    info = df[df['numero'].astype(str).str.zfill(2) == n]
-    estado = info['estado'].values[0] if not info.empty else "Disponible"
-    
-    label = f"🔵 {n}" if estado == "Pagado" else (f"🔴 {n}" if estado == "En Mora" else n)
-    if cols[i % 10].button(label, key=n):
-        st.session_state.seleccionado = n
+st.divider()
 
-# Formulario de edición
+# 5. Grilla de Números (10 columnas)
+st.write("### 📲 Toca un número para gestionar")
+for fila in range(10):
+    cols = st.columns(10)
+    for col in range(10):
+        idx = fila * 10 + col
+        n_str = f"{idx:02d}"
+        
+        # Buscar estado actual
+        dato_num = df[df['numero'] == n_str]
+        estado_actual = dato_num['estado'].values[0] if not dato_num.empty else "Disponible"
+        
+        # Definir emoji por estado
+        if estado_actual.lower() == "pagado":
+            label = f"🔵\n{n_str}"
+        elif estado_actual.lower() == "en mora":
+            label = f"🔴\n{n_str}"
+        else:
+            label = f"\n{n_str}"
+            
+        if cols[col].button(label, key=f"btn_{n_str}"):
+            st.session_state.seleccionado = n_str
+
+# 6. Formulario de Edición (aparece al tocar un botón)
 if 'seleccionado' in st.session_state:
     num = st.session_state.seleccionado
-    st.markdown(f"## 📝 Editando Número: {num}")
+    st.markdown(f"### 📝 Editando Número: {num}")
     
-    fila_actual = df[df['numero'].astype(str).str.zfill(2) == num]
-    nombre_v = fila_actual['comprador'].values[0] if not fila_actual.empty else ""
-    
-    with st.form("edit_form"):
-        nuevo_nombre = st.text_input("Nombre del Comprador", value=nombre_v)
-        nuevo_estado = st.selectbox("Estado de Pago", ["Disponible", "Pagado", "En Mora"])
+    fila_actual = df[df['numero'] == num]
+    # Extraer valores actuales o poner vacíos
+    val_nombre = fila_actual['comprador'].values[0] if not fila_actual.empty else ""
+    val_tel = fila_actual['telefono'].values[0] if not fila_actual.empty else ""
+    val_est = fila_actual['estado'].values[0] if not fila_actual.empty else "Disponible"
+
+    with st.form("form_edicion"):
+        nuevo_nom = st.text_input("Nombre del Comprador", value=str(val_nombre) if pd.notna(val_nombre) else "")
+        nuevo_tel = st.text_input("Teléfono", value=str(val_tel) if pd.notna(val_tel) else "")
+        # Normalizamos la lista para el selector
+        opciones = ["Disponible", "Pagado", "En Mora"]
+        idx_opcion = opciones.index(val_est) if val_est in opciones else 0
+        nuevo_est = st.selectbox("Estado", opciones, index=idx_opcion)
         
-        if st.form_submit_button("💾 GUARDAR CAMBIOS PARA TODOS"):
-            # Lógica para actualizar la Google Sheet
-            # (Aquí se enviaría la actualización a la hoja de cálculo)
-            st.success(f"¡Número {num} actualizado! Refrescando...")
+        col_btn1, col_btn2 = st.columns(2)
+        if col_btn1.form_submit_button("✅ GUARDAR"):
+            # Actualizar el DataFrame local
+            # Quitamos la fila vieja y ponemos la nueva
+            df = df[df['numero'] != num]
+            nueva_fila = pd.DataFrame([{'numero': num, 'comprador': nuevo_nom, 'telefono': nuevo_tel, 'estado': nuevo_est}])
+            df = pd.concat([df, nueva_fila]).sort_values('numero')
+            
+            # Subir a Google Sheets (Asegúrate que la pestaña se llame Sheet1)
+            conn.update(worksheet="Sheet1", data=df)
+            
+            st.success(f"¡Número {num} guardado con éxito!")
+            del st.session_state.seleccionado
+            st.rerun()
+            
+        if col_btn2.form_submit_button("❌ CANCELAR"):
+            del st.session_state.seleccionado
             st.rerun()
